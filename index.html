@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+    <head>
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+        />
+        <style>
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                overflow: hidden;
+            }
+
+            #source {
+                width: 100%;
+                resize: none;
+                height: calc(100% - 2cm);
+                margin: 0;
+                padding: 0;
+
+                font-size: 1.7em;
+
+                font-family: monospace;
+            }
+
+            #controls {
+                height: 1cm;
+                align-items: center;
+                justify-content: center;
+                display: flex; /* probably not the right way to implement this but it works */
+            }
+
+            #compile {
+                width: 100%;
+                height: 1cm;
+                margin: 0;
+                padding: 0;
+                border: 0;
+            }
+
+            .space {
+                width: 0.5cm;
+            }
+
+            #controls > label {
+                margin-left: 0.2cm;
+            }
+            #controls > input:not(:first-child) {
+                margin-left: 0.7cm;
+            }
+        </style>
+    </head>
+    <body>
+        <textarea
+            id="source"
+            placeholder="Write something, eg. $ e^(i pi) + 1 = 0 $"
+        ></textarea>
+        <div id="controls">
+            <input type="checkbox" id="autosize" checked />
+            <label for="autosize">Set width=height=auto</label>
+            <input type="checkbox" id="transparent" />
+            <label for="transparent">Make transparent</label>
+            <input type="number" value="3.0" id="px_per_pt" />
+            <label for="px_per_pt">Pixels per point</label>
+        </div>
+        <button id="compile">Loading WASM...</button>
+        <!-- <img id="output" /> -->
+
+        <script type="module">
+            import init, { setup, compile } from "./pkg/typst_renderer.js";
+
+            async function main() {
+                let button = document.querySelector("#compile");
+
+                await init();
+
+                button.innerText = "Initialising ...";
+
+                let ctx = setup();
+
+                window.compile = compile;
+                window.ctx = ctx;
+
+                let textarea = document.querySelector("#source");
+                let autosize = document.querySelector("#autosize");
+                let transparent = document.querySelector("#transparent");
+                let px_per_pt = document.querySelector("#px_per_pt");
+                // let img = document.querySelector("#output");
+
+                button.innerText = "Compile (Ctrl+Enter)";
+
+                function run() {
+                    console.log(autosize.checked);
+                    let output = compile(
+                        ctx,
+                        textarea.value,
+                        px_per_pt.value,
+                        autosize.checked,
+                        transparent.checked,
+                    );
+
+                    if (output === undefined) return;
+
+                    let blob = new Blob([output], { type: "image/png" });
+                    let url = URL.createObjectURL(blob);
+                    window.location = url;
+                    // img.src = url;
+                }
+
+                button.addEventListener("click", run);
+                textarea.addEventListener("keydown", (e) => {
+                    if (e.ctrlKey && e.keyCode === 13) run();
+                });
+            }
+
+            main();
+        </script>
+    </body>
+</html>
