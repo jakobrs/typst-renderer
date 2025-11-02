@@ -13,10 +13,16 @@
                 overflow: hidden;
             }
 
+            body {
+                display: flex;
+                flex-direction: column;
+            }
+
             #source {
                 width: 100%;
                 resize: none;
-                height: calc(100% - 2cm);
+                /*height: calc(100% - 2cm);*/
+                flex-grow: 1;
                 margin: 0;
                 padding: 0;
 
@@ -40,10 +46,12 @@
                 border: 0;
             }
 
-            .space {
-                width: 0.5cm;
+            #diagnostics {
+                background-color: #ffe8e8;
+                padding: 0.2cm;
+                font-family: monospace;
+                display: none;
             }
-
             #controls > label {
                 margin-left: 0.2cm;
             }
@@ -57,6 +65,7 @@
             id="source"
             placeholder="Write something, eg. $ e^(i pi) + 1 = 0 $"
         ></textarea>
+        <div id="diagnostics">Diagnostics go here</div>
         <div id="controls">
             <input type="checkbox" id="autosize" checked />
             <label for="autosize">Set width=height=auto</label>
@@ -84,6 +93,7 @@
                 window.ctx = ctx;
 
                 let textarea = document.querySelector("#source");
+                let diagnostics = document.querySelector("#diagnostics");
                 let autosize = document.querySelector("#autosize");
                 let transparent = document.querySelector("#transparent");
                 let px_per_pt = document.querySelector("#px_per_pt");
@@ -101,9 +111,30 @@
                         transparent.checked,
                     );
 
-                    if (output === undefined) return;
+                    if (output === undefined) {
+                        console.log("A fatal error occured");
+                        return;
+                    }
 
-                    let blob = new Blob([output], { type: "image/png" });
+                    if (output.output === undefined) {
+                        // Compilation error
+                        console.log(output.diagnostics);
+
+                        let diag_text = "";
+                        for (let diag of output.diagnostics) {
+                            if (diag.severity === 1) {
+                                diag_text += `Error at ${diag.range.start}..${diag.range.end}: ${diag.message}\n`;
+                            }
+                        }
+
+                        diagnostics.innerText = diag_text;
+                        diagnostics.style.display = "block";
+                        return;
+                    }
+
+                    diagnostics.style.display = "none";
+
+                    let blob = new Blob([output.output], { type: "image/png" });
                     let url = URL.createObjectURL(blob);
                     window.location = url;
                     // img.src = url;

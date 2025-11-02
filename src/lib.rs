@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use typst::{
-    Library, LibraryExt,
+    Library, LibraryExt, WorldExt,
     diag::{FileError, FileResult},
     foundations::{Bytes, Datetime},
     layout::PagedDocument,
@@ -92,27 +92,82 @@ pub fn setup() -> Context {
 }
 
 #[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct WarningRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum Severity {
+    Warning,
+    Error,
+}
+
+#[wasm_bindgen(getter_with_clone)]
+#[derive(Clone)]
+pub struct Diagnostic {
+    pub range: Option<WarningRange>,
+    pub message: String,
+    pub severity: Severity,
+}
+
+impl Diagnostic {
+    fn from_source_diagnostic(
+        world: &World,
+        prefix_len: usize,
+        source_diag: typst::diag::SourceDiagnostic,
+    ) -> Self {
+        Self {
+            range: world.range(source_diag.span).map(|x| WarningRange {
+                start: x.start.saturating_sub(prefix_len),
+                end: x.end.saturating_sub(prefix_len),
+            }),
+            message: source_diag.message.to_string(),
+            severity: match source_diag.severity {
+                typst::diag::Severity::Error => Severity::Error,
+                typst::diag::Severity::Warning => Severity::Warning,
+            },
+        }
+    }
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct CompileResult {
+    pub output: Option<Vec<u8>>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[wasm_bindgen]
 pub fn compile(
     context: &Context,
     source: &str,
     px_per_pt: f32,
     autosize: bool,
     transparent: bool,
-) -> Option<Vec<u8>> {
-    let mut source = source.to_string();
+) -> CompileResult {
+    let mut prefix = "".to_string();
     if autosize {
-        source.insert_str(0, "#set page(width: auto, height: auto, margin: 0.5cm)\n");
+        prefix.push_str("#set page(width: auto, height: auto, margin: 0.5cm)\n");
     }
     if transparent {
-        source.insert_str(0, "#set page(fill: none)\n");
+        prefix.push_str("#set page(fill: none)\n");
     }
+    let prefix_len = prefix.len();
     let world = World {
         shared: context.basic_world.clone(),
-        source,
+        source: prefix + source,
     };
     let result = typst::compile::<PagedDocument>(&world);
 
-    match result.output {
+    let mut diagnostics: Vec<_> = result
+        .warnings
+        .into_iter()
+        .map(|diag| Diagnostic::from_source_diagnostic(&world, prefix_len, diag))
+        .collect();
+
+    let output = match result.output {
         Ok(doc) => {
             let pm = typst_render::render_merged(&doc, px_per_pt, typst::layout::Abs::zero(), None);
 
@@ -121,8 +176,16 @@ pub fn compile(
             Some(png)
         }
         Err(err) => {
-            log!("Errors: {err:?}");
+            diagnostics.extend(
+                err.into_iter()
+                    .map(|diag| Diagnostic::from_source_diagnostic(&world, prefix_len, diag)),
+            );
             None
         }
+    };
+
+    CompileResult {
+        output,
+        diagnostics,
     }
 }
