@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use typst::{
-    Library, LibraryExt, WorldExt,
+    Library, LibraryExt,
     diag::{FileError, FileResult},
     foundations::{Bytes, Datetime},
-    layout::PagedDocument,
-    syntax::{FileId, Source, VirtualPath},
+    syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot},
     text::{Font, FontBook},
-    utils::LazyHash,
+    utils::{LazyHash, Scalar},
 };
+use typst_render::RenderOptions;
 use wasm_bindgen::prelude::*;
 
 mod iface;
@@ -47,7 +47,7 @@ impl typst::World for World {
         }
     }
 
-    fn file(&self, id: FileId) -> FileResult<Bytes> {
+    fn file(&self, _id: FileId) -> FileResult<Bytes> {
         Err(FileError::AccessDenied)
     }
 
@@ -55,7 +55,7 @@ impl typst::World for World {
         self.shared.fonts.get(index).cloned()
     }
 
-    fn today(&self, offset: Option<i64>) -> Option<Datetime> {
+    fn today(&self, _offset: Option<typst::foundations::Duration>) -> Option<Datetime> {
         None
     }
 }
@@ -81,7 +81,10 @@ pub fn setup() -> Context {
     log!("finished parsing fonts");
     let font_book = LazyHash::new(FontBook::from_fonts(fonts.iter()));
     let library = LazyHash::new(Library::builder().build());
-    let root = FileId::new_fake(VirtualPath::new("/root"));
+    let root = FileId::unique(RootedPath::new(
+        VirtualRoot::Project,
+        VirtualPath::new("/root").unwrap(),
+    ));
     Context {
         basic_world: Arc::new(BasicWorld {
             fonts,
@@ -96,7 +99,7 @@ pub fn setup() -> Context {
 pub fn compile(
     context: &Context,
     source: &str,
-    px_per_pt: f32,
+    pixel_per_pt: f64,
     autosize: bool,
     transparent: bool,
 ) -> iface::CompileResult {
@@ -112,7 +115,7 @@ pub fn compile(
         shared: context.basic_world.clone(),
         source: prefix + source,
     };
-    let result = typst::compile::<PagedDocument>(&world);
+    let result = typst::compile(&world);
 
     let mut diagnostics: Vec<_> = result
         .warnings
@@ -122,7 +125,8 @@ pub fn compile(
 
     let output = match result.output {
         Ok(doc) => {
-            let pm = typst_render::render_merged(&doc, px_per_pt, typst::layout::Abs::zero(), None);
+            let opts = RenderOptions { pixel_per_pt: Scalar::from(pixel_per_pt), render_bleed: false };
+            let pm = typst_render::render_merged(&doc, &opts, typst::layout::Abs::zero(), None);
 
             let png = pm.encode_png().expect("Encoding failed");
 
