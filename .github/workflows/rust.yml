@@ -27,7 +27,7 @@ jobs:
       run: cargo install wasm-pack
     - name: Build
       run: |
-        wasm-pack build --release --no-opt --target web --out-dir dist/pkg
+        wasm-pack build --release --target web --out-dir dist/pkg
         cp index.html dist/
     - name: Configure pages
       uses: actions/configure-pages@v5.0.0
