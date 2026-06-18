@@ -18,16 +18,42 @@
                 flex-direction: column;
             }
 
-            #source {
+            #editor {
                 width: 100%;
-                resize: none;
                 flex-grow: 1;
+                min-height: 0;
+
+                display: flex;
+
+                border-bottom: solid 0.5px;
+            }
+
+            #source, #preview {
+                height: 100%;
+                flex-grow: 1;
+                flex-basis: 0;
+                width: 0;
+
+                outline: none;
+                border: none;
+            }
+
+            #source {
                 margin: 0;
                 padding: 0;
+
+                resize: none;
 
                 font-size: 1.7em;
 
                 font-family: monospace;
+
+                border-right: solid 0.5px !important;
+            }
+
+            #preview {
+                object-fit: scale-down;
+                min-height: 0;
             }
 
             #wide-controls {
@@ -35,6 +61,7 @@
                 align-items: center;
                 justify-content: center;
                 display: flex; /* probably not the right way to implement this but it works */
+                flex-shrink: 0;
             }
 
             .wide-button {
@@ -43,6 +70,7 @@
                 margin: 0;
                 padding: 0;
                 border: 0;
+                flex-shrink: 0;
             }
 
             #diagnostics {
@@ -50,6 +78,7 @@
                 padding: 0.2cm;
                 font-family: monospace;
                 display: none;
+                flex-shrink: 0;
             }
             #wide-controls > label {
                 margin-left: 0.2cm;
@@ -59,6 +88,7 @@
             }
 
             #menu {
+                z-index: 2;
                 position: fixed;
                 width: 100%;
                 height: 100%;
@@ -84,6 +114,12 @@
                 height: 1.5cm;
             }
 
+            @media only screen and (max-width: 899px) {
+                #preview {
+                    display: none;
+                }
+            }
+
             @media only screen and (min-width: 1200px) {
                 .if-narrow {
                     display: none;
@@ -97,11 +133,14 @@
         </style>
     </head>
     <body>
-        <textarea
-            id="source"
-            placeholder="Write something, eg. $ e^(i pi) + 1 = 0 $"
-            spellcheck="false"
-        ></textarea>
+        <div id="editor">
+            <textarea
+                id="source"
+                placeholder="Write something, eg. $ e^(i pi) + 1 = 0 $"
+                spellcheck="false"
+            ></textarea>
+            <img id="preview" src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4="></img>
+        </div>
         <div id="diagnostics">Diagnostics go here</div>
         <div id="wide-controls">
             <input type="checkbox" id="autosize" checked />
@@ -135,6 +174,11 @@
                 </p>
 
                 <p>
+                    <input type="checkbox" id="do-preview1" checked />
+                    <label for="do-preview1">Render preview</label>
+                </p>
+
+                <p>
                     <button id="close-settings">Close</button>
                 </p>
             </div>
@@ -148,6 +192,7 @@
 
             let button = document.querySelector("#compile");
             let textarea = document.querySelector("#source");
+            let preview = document.querySelector("#preview");
             let diagnostics = document.querySelector("#diagnostics");
             let autosize = document.querySelector("#autosize");
             let transparent = document.querySelector("#transparent");
@@ -211,9 +256,51 @@
                     // img.src = url;
                 }
 
+                function render_preview() {
+                    let output = compile(
+                        ctx,
+                        textarea.value,
+                        px_per_pt.value,
+                        autosize.checked,
+                        transparent.checked,
+                    );
+
+                    if (output === undefined) {
+                        console.log("A fatal error occured");
+                        return;
+                    }
+
+                    if (output.output === undefined) {
+                        // Compilation error
+                        console.log(output.diagnostics);
+
+                        let diag_text = "";
+                        for (let diag of output.diagnostics) {
+                            if (diag.severity === 1) {
+                                diag_text += `Error at ${diag.range.start}..${diag.range.end}: ${diag.message}\n`;
+                            }
+                        }
+
+                        diagnostics.innerText = diag_text;
+                        diagnostics.style.display = "block";
+                        return;
+                    }
+
+                    diagnostics.style.display = "none";
+
+                    let blob = new Blob([output.output], { type: "image/png" });
+                    let url = URL.createObjectURL(blob);
+                    preview.src = url;
+                }
+
                 button.addEventListener("click", run);
                 textarea.addEventListener("keydown", (e) => {
                     if (e.ctrlKey && e.keyCode === 13) run();
+
+                    let visible = window.getComputedStyle(preview, null).display != "none";
+                    if (visible) {
+                        requestAnimationFrame(render_preview);
+                    }
                 });
             }
 
