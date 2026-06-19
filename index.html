@@ -137,7 +137,8 @@
         <div id="editor">
             <textarea
                 id="source"
-                placeholder="Write something, eg. $ e^(i pi) + 1 = 0 $"
+                placeholder="Write something, eg.
+"
                 spellcheck="false"
             ></textarea>
             <img id="preview" src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4="></img>
@@ -188,8 +189,29 @@
             Loading WASM...
         </button>
 
+        <script>
+            // Idk how loading works but this needs to be in its own script to make sure no flickering happens
+            (() => {  // we will redefine things below, make sure that we don't pollute socpe
+              let textarea = document.querySelector("#source");
+
+              let formulae = [
+                  "e^(i pi) + 1 = 0",
+                  "integral_C dif omega = integral_(partial C) omega",
+                  "(partial u)/(partial t) = nabla^2 u",
+                  "F(xi) = integral f(t) e^(-2 pi i xi t) dif t",
+                  "(A = B) tilde.eq (A tilde.eq B)",
+                  "e^x = sum_n x^n/n!",
+                  "n! ~ sqrt(2 pi n) (n/e)^n",
+                  "(not phi -> not psi) -> psi -> phi",
+              ];
+
+              let formula = formulae[Math.floor(Math.random() * formulae.length)];
+              source.placeholder += `$ ${formula} $`;
+            })();
+        </script>
+
         <script type="module">
-            import init, { setup, compile } from "./pkg/typst_renderer.js";
+            import init, { setup, compile } from "https://typst.ud2.no/pkg/typst_renderer.js";
 
             let button = document.querySelector("#compile");
             let textarea = document.querySelector("#source");
@@ -202,7 +224,6 @@
             let open_settings = document.querySelector("#open-settings");
             let close_settings = document.querySelector("#close-settings");
             let menu = document.querySelector("#menu");
-
             // In case of reload
             button.disabled = true;
 
@@ -294,15 +315,22 @@
                     preview.src = url;
                 }
 
-                button.addEventListener("click", run);
-                textarea.addEventListener("keydown", (e) => {
-                    if (e.ctrlKey && e.keyCode === 13) run();
-
+                function queue_render_preview() {
                     let visible = window.getComputedStyle(preview, null).display != "none";
                     if (visible) {
                         requestAnimationFrame(render_preview);
                     }
+                }
+
+                button.addEventListener("click", run);
+                textarea.addEventListener("keydown", (e) => {
+                    if (e.ctrlKey && e.keyCode === 13) run();
+
+                    queue_render_preview();
+
                 });
+
+                queue_render_preview();
             }
 
             main();
