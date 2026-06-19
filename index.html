@@ -5,6 +5,7 @@
             name="viewport"
             content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
         />
+        <title>Typst WASM renderer</title>
         <style>
             html,
             body {
@@ -272,7 +273,7 @@
 
                     if (output.output === undefined) {
                         // Compilation error
-                        console.log(output.diagnostics);
+                        // console.log(output.diagnostics);
 
                         let diag_text = "";
                         for (let diag of output.diagnostics) {
