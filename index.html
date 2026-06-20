@@ -137,6 +137,7 @@
         <div id="editor">
             <textarea
                 id="source"
+                class="input"
                 placeholder="Write something, eg.
 "
                 spellcheck="false"
@@ -145,11 +146,11 @@
         </div>
         <div id="diagnostics">Diagnostics go here</div>
         <div id="wide-controls">
-            <input type="checkbox" id="autosize" checked />
+            <input type="checkbox" class="input" id="autosize" checked />
             <label for="autosize">Set width=height=auto</label>
-            <input type="checkbox" id="transparent" />
+            <input type="checkbox" class="input" id="transparent" />
             <label for="transparent">Make transparent</label>
-            <input type="number" value="3.0" id="px_per_pt" />
+            <input type="number" class="input" value="3.0" id="px_per_pt" />
             <label for="px_per_pt">Pixels per point</label>
         </div>
         <button class="wide-button if-narrow" id="open-settings">
@@ -161,23 +162,18 @@
                 <hr />
 
                 <p>
-                    <input type="checkbox" id="autosize1" checked />
+                    <input type="checkbox" class="input" id="autosize1" checked />
                     <label for="autosize1">Set width=height=auto</label>
                 </p>
 
                 <p>
-                    <input type="checkbox" id="transparent1" />
+                    <input type="checkbox" class="input" id="transparent1" />
                     <label for="transparent1">Make transparent</label><br />
                 </p>
 
                 <p>
-                    <input type="number" value="3.0" id="px_per_pt1" />
+                    <input type="number" class="input" value="3.0" id="px_per_pt1" />
                     <label for="px_per_pt1">Pixels per point</label><br />
-                </p>
-
-                <p>
-                    <input type="checkbox" id="do-preview1" checked />
-                    <label for="do-preview1">Render preview</label>
                 </p>
 
                 <p>
@@ -211,7 +207,7 @@
         </script>
 
         <script type="module">
-            import init, { setup, compile } from "https://typst.ud2.no/pkg/typst_renderer.js";
+            let worker = new Worker("/worker.js", { type: "module" });
 
             let button = document.querySelector("#compile");
             let textarea = document.querySelector("#source");
@@ -224,116 +220,96 @@
             let open_settings = document.querySelector("#open-settings");
             let close_settings = document.querySelector("#close-settings");
             let menu = document.querySelector("#menu");
+
+            // queue_job will set the queued job parameters, and have it be processed as soon as possible.
+            class JobScheduler {
+                constructor(worker, oncompleted) {
+                    this.worker = worker;
+                    this.working = false;
+                    this.queued = null;
+                    this.oncompleted = oncompleted;
+                    this.job_count = 0;
+
+                    this.worker.onmessage = (e) => this.handle_response(e);
+                }
+
+                check_queue() {
+                    if (!this.working && this.queued) {
+                        this.working = true;
+                        this.worker.postMessage(this.queued);
+                        this.queued = null;
+                    }
+                }
+
+                handle_response(e) {
+                    this.oncompleted(e.data);
+
+                    this.working = false;
+                    this.check_queue();
+                }
+
+                next_job_id() {
+                    return this.job_count;
+                }
+
+                queue_job(params) {
+                    this.queued = [params, this.job_count];
+                    this.job_count += 1;
+                    this.check_queue();
+                }
+            };
+
             // In case of reload
             button.disabled = true;
 
-            async function main() {
-                await init();
+            button.innerText = "Initialising ...";
 
-                button.innerText = "Initialising ...";
-
-                let ctx = setup();
-
-                window.compile = compile;
-                window.ctx = ctx;
-
+            worker.onmessage = () => {
                 button.innerText = "Compile (Ctrl+Enter)";
                 button.disabled = false;
 
-                function run() {
-                    let output = compile(
-                        ctx,
-                        textarea.value,
-                        px_per_pt.value,
-                        autosize.checked,
-                        transparent.checked,
-                    );
+                let redirect_upon_completion = null;
 
-                    if (output === undefined) {
-                        console.log("A fatal error occured");
-                        return;
-                    }
-
-                    if (output.output === undefined) {
-                        // Compilation error
-                        console.log(output.diagnostics);
-
-                        let diag_text = "";
-                        for (let diag of output.diagnostics) {
-                            if (diag.severity === 1) {
-                                diag_text += `Error at ${diag.range.start}..${diag.range.end}: ${diag.message}\n`;
-                            }
-                        }
-
-                        diagnostics.innerText = diag_text;
+                function oncompleted(output) {
+                    if (output.diagnostics !== undefined) {
+                        diagnostics.innerText = output.diagnostics;
                         diagnostics.style.display = "block";
-                        return;
+                    } else {
+                        diagnostics.style.display = "none";
+                        preview.src = output.url;
+                        if (redirect_upon_completion !== null && output.job_id >= redirect_upon_completion) {
+                            redirect_upon_completion = null;
+                            window.location = output.url;
+                        }
                     }
-
-                    diagnostics.style.display = "none";
-
-                    let blob = new Blob([output.output], { type: "image/png" });
-                    let url = URL.createObjectURL(blob);
-                    window.location = url;
-                    // img.src = url;
                 }
+
+                let renderer = new JobScheduler(worker, oncompleted);
 
                 function render_preview() {
-                    let output = compile(
-                        ctx,
-                        textarea.value,
-                        px_per_pt.value,
-                        autosize.checked,
-                        transparent.checked,
-                    );
-
-                    if (output === undefined) {
-                        console.log("A fatal error occured");
-                        return;
-                    }
-
-                    if (output.output === undefined) {
-                        // Compilation error
-                        // console.log(output.diagnostics);
-
-                        let diag_text = "";
-                        for (let diag of output.diagnostics) {
-                            if (diag.severity === 1) {
-                                diag_text += `Error at ${diag.range.start}..${diag.range.end}: ${diag.message}\n`;
-                            }
-                        }
-
-                        diagnostics.innerText = diag_text;
-                        diagnostics.style.display = "block";
-                        return;
-                    }
-
-                    diagnostics.style.display = "none";
-
-                    let blob = new Blob([output.output], { type: "image/png" });
-                    let url = URL.createObjectURL(blob);
-                    preview.src = url;
-                }
-
-                function queue_render_preview() {
                     let visible = window.getComputedStyle(preview, null).display != "none";
+
                     if (visible) {
-                        requestAnimationFrame(render_preview);
+                        renderer.queue_job([textarea.value, px_per_pt.value, autosize.checked, transparent.checked]);
                     }
                 }
 
-                button.addEventListener("click", run);
+                for (let el of document.querySelectorAll(".input")) {
+                    el.addEventListener("input", (e) => render_preview());
+                }
+
+                function run() {
+                    redirect_upon_completion = renderer.next_job_id();
+                    renderer.queue_job([textarea.value, px_per_pt.value, autosize.checked, transparent.checked]);
+                }
+
+                button.addEventListener("click", (e) => run());
                 textarea.addEventListener("keydown", (e) => {
                     if (e.ctrlKey && e.keyCode === 13) run();
-
-                    queue_render_preview();
-
                 });
 
-                queue_render_preview();
-            }
-
-            main();
+                render_preview();
+            };
 
             open_settings.addEventListener("click", () => {
                 menu.hidden = false;
