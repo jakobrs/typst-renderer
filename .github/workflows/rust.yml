@@ -28,7 +28,7 @@ jobs:
     - name: Build
       run: |
         wasm-pack build --release --target web --out-dir dist/pkg
-        cp index.html dist/
+        cp index.html worker.js dist/
     - name: Configure pages
       uses: actions/configure-pages@v5.0.0
     - name: Upload artifact
