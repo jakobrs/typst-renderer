@@ -271,6 +271,7 @@
             let close_settings = document.querySelector("#close-settings");
             let menu = document.querySelector("#menu");
 
+            let font_list_ul = document.querySelector("#font-list-ul");
             let font_picker = document.querySelector("#font-picker");
             let font_picker_add = document.querySelector("#font-picker-add");
 
@@ -296,7 +297,6 @@
                         this.pending_callbacks[id] = cb;
                         this.queued_count -= 1;
                         delete this.queued[key];
-                        console.log(params);
                         this.worker.postMessage([params, id]);
                     }
                 }
@@ -364,16 +364,29 @@
                 });
 
                 font_picker_add.addEventListener("click", () => {
-                    console.log("a");
-                    if (font_picker.files.length !== 1) {
-                        console.log("must select exactly one file for now");
+                    if (font_picker.files.length < 1) {
+                        console.log("select a file");
                         return;
                     }
-                    let reader = new FileReader();
-                    reader.onload = (e) => {
-                        renderer.queue_job(["load_font", e.target.result], (status) => console.log("finished loading font", status));
+                    for (const font of font_picker.files) {
+                        let reader = new FileReader();
+                        reader.onload = (e) => {
+                            renderer.queue_job(["load_font", e.target.result], (status) => {
+                                console.log("finished loading font, success?", status.success);
+
+                                if (status.success) {
+                                    // need to add to list of loaded fonts
+                                    // also need to add to indexeddb or similar
+
+                                    let item = document.createElement("li");
+                                    item.innerText = status.font_family ?? font.name;
+                                    font_list_ul.appendChild(item);
+                                }
+                            });
+                        }
+                        console.log("Loading font:", font);
+                        reader.readAsArrayBuffer(font);
                     }
-                    reader.readAsArrayBuffer(font_picker.files[0]);
                 });
 
                 render_preview();

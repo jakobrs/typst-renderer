@@ -96,12 +96,12 @@ pub fn setup() -> Context {
 pub fn load_font(
     context: &mut Context,
     data: Vec<u8>,
-) -> bool {
-    log!("{:?}", &data[..10]);
-    let Some(font) = Font::new(Bytes::new(data), 0 as u32) else { return false; };
+) -> Option<String> {
+    let Some(font) = Font::new(Bytes::new(data), 0 as u32) else { return None; };
+    let name = font.info().family.clone();
     context.basic_world.font_book.push(font.info().clone());
     context.basic_world.fonts.push(font);
-    true
+    Some(name)
 }
 
 #[wasm_bindgen]

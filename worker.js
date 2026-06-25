@@ -12,7 +12,6 @@ async function main() {
     if (job[0] == "render") {
       let [_method, source, px_per_pt, autosize, transparent] = job;
 
-      console.log(source);
       let output = compile(ctx, source, px_per_pt, autosize, transparent);
 
       if (output.output === undefined) {
@@ -35,7 +34,11 @@ async function main() {
 
       let output = load_font(ctx, new Uint8Array(font_data));
 
-      postMessage({ "result": output, "job_id": job_id });
+      if (output === undefined) {
+          postMessage({ "success": false, "job_id": job_id });
+      } else {
+          postMessage({ "success": true, "font_family": output, "job_id": job_id });
+      }
     }
   });
 }
