@@ -87,6 +87,14 @@
             #wide-controls > input:not(:first-child) {
                 margin-left: 0.7cm;
             }
+            #wide-controls > button {
+                margin-left: 0.7cm;
+                height: 100%;
+                padding: 0 0.3cm;
+                border-radius: 0;
+                border-width: 0.5px;
+                /*border: 0;*/
+            }
 
             #menu {
                 z-index: 2;
@@ -108,11 +116,52 @@
                 width: calc(80% - 40px);
                 height: calc(80% - 40px);
                 padding: 20px;
+
+                overflow-y: auto;
             }
 
-            #menu button {
-                width: 100%;
+            #menu #close-settings {
+                width: calc(80% - 40px);
+                bottom: calc(10% + 20px);
                 height: 1.5cm;
+                position: fixed;
+            }
+
+            #font-list {
+                border-radius: 5pt;
+                border: 1px solid black;
+
+                padding: 0.5cm;
+
+                position: relative;
+            }
+
+            #font-list>h2 {
+                position: absolute;
+                top: -0.36cm;
+                left: 0.7cm;
+                margin: 0;
+                padding: 0 0.2cm;
+                font-size: 14pt;
+                font-weight: 600;
+                background-color: white;
+            }
+
+            #font-list ul {
+                padding: 0;
+                border: 1px solid black;
+                height: 16em;
+                overflow-y: auto;
+            }
+            #font-list ul>li {
+                list-style-type: none;
+                padding: 0.1cm;
+            }
+            #font-list ul>li:nth-child(even) {
+                background-color: #ddd;
+            }
+            #font-list ul a {
+                color: blue;
             }
 
             @media only screen and (max-width: 899px) {
@@ -150,8 +199,9 @@
             <label for="autosize">Set width=height=auto</label>
             <input type="checkbox" class="input" id="transparent" />
             <label for="transparent">Make transparent</label>
-            <input type="number" class="input" value="3.0" id="px_per_pt" />
+            <input type="number" class="input" value="7.0" id="px_per_pt" max="20" />
             <label for="px_per_pt">Pixels per point</label>
+            <button id="open-settings-wide">More</button>
         </div>
         <button class="wide-button if-narrow" id="open-settings">
             Settings
@@ -172,9 +222,24 @@
                 </p>
 
                 <p>
-                    <input type="number" class="input" value="3.0" id="px_per_pt1" />
+                    <input type="number" class="input" value="7.0" id="px_per_pt1" max="20" />
                     <label for="px_per_pt1">Pixels per point</label><br />
                 </p>
+
+                <div id="font-list">
+                    <h2>Fonts</h2>
+                    <div>
+                        <ul id="font-list-ul">
+                            <!-- These two are builtin -->
+                            <li><a href="https://ctan.org/pkg/newcomputermodern?lang=en">New Computer Modern</a></li>
+                            <li><a href="https://ctan.org/pkg/newcomputermodern?lang=en">New Computer Modern Math</a></li>
+                        </ul>
+
+                        <label for="font-picker">Add font:</label>
+                        <input type="file" id="font-picker" accept="font/otf,font/ttf" multiple />
+                        <button id="font-picker-add">Add</button>
+                    </div>
+                </div>
 
                 <p>
                     <button id="close-settings">Close</button>
@@ -218,44 +283,58 @@
             let px_per_pt = document.querySelector("#px_per_pt");
 
             let open_settings = document.querySelector("#open-settings");
+            let open_settings_wide = document.querySelector("#open-settings-wide");
             let close_settings = document.querySelector("#close-settings");
             let menu = document.querySelector("#menu");
 
+            let font_list_ul = document.querySelector("#font-list-ul");
+            let font_picker = document.querySelector("#font-picker");
+            let font_picker_add = document.querySelector("#font-picker-add");
+
             // queue_job will set the queued job parameters, and have it be processed as soon as possible.
             class JobScheduler {
-                constructor(worker, oncompleted) {
+                constructor(worker) {
                     this.worker = worker;
                     this.working = false;
-                    this.queued = null;
-                    this.oncompleted = oncompleted;
+
                     this.job_count = 0;
+                    this.queued = {};
+                    this.queued_count = 0;
+                    this.pending_callbacks = {};
 
                     this.worker.onmessage = (e) => this.handle_response(e);
                 }
 
                 check_queue() {
-                    if (!this.working && this.queued) {
+                    if (!this.working && this.queued_count !== 0) {
                         this.working = true;
-                        this.worker.postMessage(this.queued);
-                        this.queued = null;
+                        let key = Object.keys(this.queued)[0];
+                        let [params, id, cb] = this.queued[key];
+                        this.pending_callbacks[id] = cb;
+                        this.queued_count -= 1;
+                        delete this.queued[key];
+                        this.worker.postMessage([params, id]);
                     }
                 }
 
                 handle_response(e) {
-                    this.oncompleted(e.data);
-
+                    let id = e.data.job_id;
+                    this.pending_callbacks[id](e.data);
                     this.working = false;
                     this.check_queue();
                 }
 
-                next_job_id() {
-                    return this.job_count;
+                queue_job(params, callback, key = null) {
+                    key = key ?? `job${this.job_count}`;
+                    if (!(key in this.queued)) this.queued_count += 1;
+                    this.queued[key] = [params, this.job_count, callback];
+                    this.job_count += 1;
+
+                    this.check_queue();
                 }
 
-                queue_job(params) {
-                    this.queued = [params, this.job_count];
-                    this.job_count += 1;
-                    this.check_queue();
+                queue_job_async(params) {
+                    return new Promise((resolve) => this.queue_job(params, resolve));
                 }
             };
 
@@ -268,8 +347,6 @@
                 button.innerText = "Compile (Ctrl+Enter)";
                 button.disabled = false;
 
-                let redirect_upon_completion = null;
-
                 function oncompleted(output) {
                     if (output.diagnostics !== undefined) {
                         diagnostics.innerText = output.diagnostics;
@@ -277,20 +354,16 @@
                     } else {
                         diagnostics.style.display = "none";
                         preview.src = output.url;
-                        if (redirect_upon_completion !== null && output.job_id >= redirect_upon_completion) {
-                            redirect_upon_completion = null;
-                            window.location = output.url;
-                        }
                     }
                 }
 
-                let renderer = new JobScheduler(worker, oncompleted);
+                let renderer = new JobScheduler(worker);
 
                 function render_preview() {
                     let visible = window.getComputedStyle(preview, null).display != "none";
 
                     if (visible) {
-                        renderer.queue_job([textarea.value, px_per_pt.value, autosize.checked, transparent.checked]);
+                        renderer.queue_job(["render", textarea.value, px_per_pt.value, autosize.checked, transparent.checked], oncompleted, "render");
                     }
                 }
 
@@ -299,13 +372,40 @@
                 }
 
                 function run() {
-                    redirect_upon_completion = renderer.next_job_id();
-                    renderer.queue_job([textarea.value, px_per_pt.value, autosize.checked, transparent.checked]);
+                    renderer.queue_job(["render", textarea.value, px_per_pt.value, autosize.checked, transparent.checked], (output) => {
+                        oncompleted(output);
+                        window.location = output.url;
+                    });
                 }
 
                 button.addEventListener("click", (e) => run());
                 textarea.addEventListener("keydown", (e) => {
                     if (e.ctrlKey && e.keyCode === 13) run();
+                });
+
+                font_picker_add.addEventListener("click", () => {
+                    if (font_picker.files.length < 1) {
+                        console.log("select a file");
+                        return;
+                    }
+                    for (const font of font_picker.files) {
+                        let reader = new FileReader();
+                        reader.onload = async (e) => {
+                            let status = await renderer.queue_job_async(["load_font", e.target.result]);
+                            console.log("finished loading font, success?", status.success);
+
+                            if (status.success) {
+                                // need to add to list of loaded fonts
+                                // also need to add to indexeddb or similar
+
+                                let item = document.createElement("li");
+                                item.innerText = status.font_family ?? font.name;
+                                font_list_ul.appendChild(item);
+                            }
+                        }
+                        console.log("Loading font:", font);
+                        reader.readAsArrayBuffer(font);
+                    }
                 });
 
                 render_preview();
@@ -314,8 +414,17 @@
             open_settings.addEventListener("click", () => {
                 menu.hidden = false;
             });
+            open_settings_wide.addEventListener("click", () => {
+                menu.hidden = false;
+            });
             close_settings.addEventListener("click", () => {
                 menu.hidden = true;
+            });
+
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "Escape") {
+                    menu.hidden = true;
+                }
             });
 
             function sync(name) {

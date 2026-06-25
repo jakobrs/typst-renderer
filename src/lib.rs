@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use typst::{
     Library, LibraryExt,
     diag::{FileError, FileResult},
@@ -21,12 +19,12 @@ struct BasicWorld {
     root: FileId,
 }
 
-struct World {
-    shared: Arc<BasicWorld>,
+struct World<'a> {
+    shared: &'a BasicWorld,
     source: String,
 }
 
-impl typst::World for World {
+impl<'a> typst::World for World<'a> {
     fn library(&self) -> &LazyHash<Library> {
         &self.shared.library
     }
@@ -62,8 +60,7 @@ impl typst::World for World {
 
 #[wasm_bindgen]
 pub struct Context {
-    // This can arguably just be a reference in World, using Arcs as a simplification for now
-    basic_world: Arc<BasicWorld>,
+    basic_world: Box<BasicWorld>,
 }
 
 #[wasm_bindgen]
@@ -86,13 +83,25 @@ pub fn setup() -> Context {
         VirtualPath::new("/root").unwrap(),
     ));
     Context {
-        basic_world: Arc::new(BasicWorld {
+        basic_world: Box::new(BasicWorld {
             fonts,
             font_book,
             library,
             root,
         }),
     }
+}
+
+#[wasm_bindgen]
+pub fn load_font(
+    context: &mut Context,
+    data: Vec<u8>,
+) -> Option<String> {
+    let Some(font) = Font::new(Bytes::new(data), 0 as u32) else { return None; };
+    let name = font.info().family.clone();
+    context.basic_world.font_book.push(font.info().clone());
+    context.basic_world.fonts.push(font);
+    Some(name)
 }
 
 #[wasm_bindgen]
@@ -112,7 +121,7 @@ pub fn compile(
     }
     let prefix_len = prefix.len();
     let world = World {
-        shared: context.basic_world.clone(),
+        shared: &context.basic_world,
         source: prefix + source,
     };
     let result = typst::compile(&world);
