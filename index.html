@@ -110,9 +110,44 @@
                 padding: 20px;
             }
 
-            #menu button {
+            #menu #close-settings {
                 width: 100%;
                 height: 1.5cm;
+            }
+
+            #font-list {
+                border-radius: 5pt;
+                border: 1px solid black;
+
+                padding: 0.5cm;
+
+                position: relative;
+            }
+
+            #font-list>h2 {
+                position: absolute;
+                top: -0.36cm;
+                left: 0.7cm;
+                margin: 0;
+                padding: 0 0.2cm;
+                font-size: 14pt;
+                font-weight: 600;
+                background-color: white;
+            }
+
+            #font-list ul {
+                padding: 0;
+                border: 1px solid black;
+            }
+            #font-list ul>li {
+                list-style-type: none;
+                padding: 0.1cm;
+            }
+            #font-list ul>li:nth-child(even) {
+                background-color: #ddd;
+            }
+            #font-list ul a {
+                color: blue;
             }
 
             @media only screen and (max-width: 899px) {
@@ -156,7 +191,7 @@
         <button class="wide-button if-narrow" id="open-settings">
             Settings
         </button>
-        <div id="menu" hidden>
+        <div id="menu"> <!-- Remember hidden -->
             <div>
                 <h1>Advanced</h1>
                 <hr />
@@ -175,6 +210,21 @@
                     <input type="number" class="input" value="3.0" id="px_per_pt1" />
                     <label for="px_per_pt1">Pixels per point</label><br />
                 </p>
+
+                <div id="font-list">
+                    <h2>Fonts</h2>
+                    <div>
+                        <ul id="font-list-ul">
+                            <!-- These two are builtin -->
+                            <li><a href="https://ctan.org/pkg/newcomputermodern?lang=en">New Computer Modern</a></li>
+                            <li><a href="https://ctan.org/pkg/newcomputermodern?lang=en">New Computer Modern Math</a></li>
+                        </ul>
+
+                        <label for="font-picker">Add font:</label>
+                        <input type="file" id="font-picker" />
+                        <button id="font-picker-add">Add</button>
+                    </div>
+                </div>
 
                 <p>
                     <button id="close-settings">Close</button>
@@ -221,40 +271,49 @@
             let close_settings = document.querySelector("#close-settings");
             let menu = document.querySelector("#menu");
 
+            let font_picker = document.querySelector("#font-picker");
+            let font_picker_add = document.querySelector("#font-picker-add");
+
             // queue_job will set the queued job parameters, and have it be processed as soon as possible.
             class JobScheduler {
-                constructor(worker, oncompleted) {
+                constructor(worker) {
                     this.worker = worker;
                     this.working = false;
-                    this.queued = null;
-                    this.oncompleted = oncompleted;
+
                     this.job_count = 0;
+                    this.queued = {};
+                    this.queued_count = 0;
+                    this.pending_callbacks = {};
 
                     this.worker.onmessage = (e) => this.handle_response(e);
                 }
 
                 check_queue() {
-                    if (!this.working && this.queued) {
+                    if (!this.working && this.queued_count !== 0) {
                         this.working = true;
-                        this.worker.postMessage(this.queued);
-                        this.queued = null;
+                        let key = Object.keys(this.queued);
+                        let [params, id, cb] = this.queued[key];
+                        this.pending_callbacks[id] = cb;
+                        this.queued_count -= 1;
+                        delete this.queued[key];
+                        console.log(params);
+                        this.worker.postMessage([params, id]);
                     }
                 }
 
                 handle_response(e) {
-                    this.oncompleted(e.data);
-
+                    let id = e.data.job_id;
+                    this.pending_callbacks[id](e.data);
                     this.working = false;
                     this.check_queue();
                 }
 
-                next_job_id() {
-                    return this.job_count;
-                }
-
-                queue_job(params) {
-                    this.queued = [params, this.job_count];
+                queue_job(params, callback, key = null) {
+                    key = key ?? `job${this.job_count}`;
+                    if (!(key in this.queued)) this.queued_count += 1;
+                    this.queued[key] = [params, this.job_count, callback];
                     this.job_count += 1;
+
                     this.check_queue();
                 }
             };
@@ -268,8 +327,6 @@
                 button.innerText = "Compile (Ctrl+Enter)";
                 button.disabled = false;
 
-                let redirect_upon_completion = null;
-
                 function oncompleted(output) {
                     if (output.diagnostics !== undefined) {
                         diagnostics.innerText = output.diagnostics;
@@ -277,20 +334,16 @@
                     } else {
                         diagnostics.style.display = "none";
                         preview.src = output.url;
-                        if (redirect_upon_completion !== null && output.job_id >= redirect_upon_completion) {
-                            redirect_upon_completion = null;
-                            window.location = output.url;
-                        }
                     }
                 }
 
-                let renderer = new JobScheduler(worker, oncompleted);
+                let renderer = new JobScheduler(worker);
 
                 function render_preview() {
                     let visible = window.getComputedStyle(preview, null).display != "none";
 
                     if (visible) {
-                        renderer.queue_job([textarea.value, px_per_pt.value, autosize.checked, transparent.checked]);
+                        renderer.queue_job(["render", textarea.value, px_per_pt.value, autosize.checked, transparent.checked], oncompleted, "render");
                     }
                 }
 
@@ -299,13 +352,28 @@
                 }
 
                 function run() {
-                    redirect_upon_completion = renderer.next_job_id();
-                    renderer.queue_job([textarea.value, px_per_pt.value, autosize.checked, transparent.checked]);
+                    renderer.queue_job(["render", textarea.value, px_per_pt.value, autosize.checked, transparent.checked], (output) => {
+                        oncompleted(output);
+                        window.location = output.url;
+                    });
                 }
 
                 button.addEventListener("click", (e) => run());
                 textarea.addEventListener("keydown", (e) => {
                     if (e.ctrlKey && e.keyCode === 13) run();
+                });
+
+                font_picker_add.addEventListener("click", () => {
+                    console.log("a");
+                    if (font_picker.files.length !== 1) {
+                        console.log("must select exactly one file for now");
+                        return;
+                    }
+                    let reader = new FileReader();
+                    reader.onload = (e) => {
+                        renderer.queue_job(["load_font", e.target.result], (status) => console.log("finished loading font", status));
+                    }
+                    reader.readAsArrayBuffer(font_picker.files[0]);
                 });
 
                 render_preview();
