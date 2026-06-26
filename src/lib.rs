@@ -113,11 +113,12 @@ pub fn compile(
     transparent: bool,
 ) -> iface::CompileResult {
     let mut prefix = "".to_string();
-    if autosize {
-        prefix.push_str("#set page(width: auto, height: auto, margin: 0.5cm)\n");
-    }
     if transparent {
         prefix.push_str("#set page(fill: none)\n");
+    }
+    if autosize {
+        prefix.push_str("#set page(width: auto, height: auto, margin: 0.5cm)\n");
+        prefix.push_str("#show: body => context { let w = measure(body).width; if w >= 15cm { box(width: 15cm, body) } else { body } }\n");
     }
     let prefix_len = prefix.len();
     let world = World {
