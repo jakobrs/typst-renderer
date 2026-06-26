@@ -443,12 +443,18 @@
                     let fonts = transaction.objectStore("fonts");
 
                     fonts.openCursor().onsuccess = (event) => {
-                        console.log("Loading stored font", event.target.result.value.family);
+                        let cursor = event.target.result;
 
-                        let data = new Uint8Array(event.target.result.value.data);
-                        renderer.queue_job(["load_font", data], () => setTimeout(render_preview, 0.1));
+                        if (cursor) {
+                            console.log("Loading stored font", cursor.value.family);
 
-                        add_font_to_ui(event.target.result.value.family);
+                            let data = new Uint8Array(cursor.value.data);
+                            renderer.queue_job(["load_font", data], () => setTimeout(render_preview, 0.1));
+
+                            add_font_to_ui(cursor.value.family);
+
+                            cursor.continue();
+                        }
                     }
                 })();
 
