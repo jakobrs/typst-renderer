@@ -160,6 +160,10 @@
             #font-list ul>li:nth-child(even) {
                 background-color: #ddd;
             }
+            #font-list ul>li button {
+                margin-left: 1cm;
+                height: 100%;
+            }
             #font-list ul a {
                 color: blue;
             }
@@ -274,6 +278,7 @@
         <script type="module">
             let worker = new Worker("/worker.js", { type: "module" });
 
+            // --- Elements ---
             let button = document.querySelector("#compile");
             let textarea = document.querySelector("#source");
             let preview = document.querySelector("#preview");
@@ -291,6 +296,7 @@
             let font_picker = document.querySelector("#font-picker");
             let font_picker_add = document.querySelector("#font-picker-add");
 
+            // --- WebWorker scheduling ---
             // queue_job will set the queued job parameters, and have it be processed as soon as possible.
             class JobScheduler {
                 constructor(worker) {
@@ -319,12 +325,15 @@
 
                 handle_response(e) {
                     let id = e.data.job_id;
-                    this.pending_callbacks[id](e.data);
+                    if (this.pending_callbacks[id] !== null) {
+                        this.pending_callbacks[id](e.data);
+                    }
+                    delete this.pending_callbacks[id];
                     this.working = false;
                     this.check_queue();
                 }
 
-                queue_job(params, callback, key = null) {
+                queue_job(params, callback = null, key = null) {
                     key = key ?? `job${this.job_count}`;
                     if (!(key in this.queued)) this.queued_count += 1;
                     this.queued[key] = [params, this.job_count, callback];
@@ -338,9 +347,69 @@
                 }
             };
 
+            // --- Fancy resource thing ---
+            class Resource {
+                constructor() {
+                    this.awaiters = [];
+                    this.resolved = false;
+                    this.object = null;
+                }
+
+                resolve(object) {
+                    this.resolved = true;
+                    this.object = object;
+
+                    for (const awaiter of this.awaiters) {
+                        awaiter(object);
+                    }
+                }
+
+                get() {
+                    return new Promise(resolve => {
+                        if (this.resolved) {
+                            resolve(this.object);
+                        } else {
+                            this.awaiters.push(resolve);
+                        }
+                    });
+                }
+            };
+
+            // --- IndexedDB ---
+            let fonts_req = window.indexedDB.open("fonts", 1);
+            let fonts_db = new Resource();
+            fonts_req.onerror = (event) => {
+                console.error("your db is broken, pls fix", event.target.error?.message);
+            };
+            fonts_req.onsuccess = (event) => {
+                console.log(event);
+                fonts_db.resolve(event.target.result);
+            };
+            fonts_req.onupgradeneeded = (event) => {
+                console.log("Setting up db");
+                let db = event.target.result;
+
+                let objectStore = db.createObjectStore("fonts", { keyPath: "family" });
+            };
+
+            function add_font_to_ui(family) {
+                let item = document.createElement("li");
+                item.innerText = family;
+                let delete_button = document.createElement("button");
+                delete_button.innerText = "remove";
+                item.appendChild(delete_button);
+                font_list_ul.appendChild(item);
+
+                delete_button.onclick = async () => {
+                    let db = await fonts_db.get();
+
+                    db.transaction(["fonts"], "readwrite").objectStore("fonts").delete(family);
+                    item.remove();
+                }
+            }
+
             // In case of reload
             button.disabled = true;
-
             button.innerText = "Initialising ...";
 
             worker.onmessage = () => {
@@ -366,6 +435,22 @@
                         renderer.queue_job(["render", textarea.value, px_per_pt.value, autosize.checked, transparent.checked], oncompleted, "render");
                     }
                 }
+
+                (async () => {
+                    let db = await fonts_db.get();
+
+                    let transaction = db.transaction(["fonts"], "readonly");
+                    let fonts = transaction.objectStore("fonts");
+
+                    fonts.openCursor().onsuccess = (event) => {
+                        console.log("Loading stored font", event.target.result.value.family);
+
+                        let data = new Uint8Array(event.target.result.value.data);
+                        renderer.queue_job(["load_font", data], () => setTimeout(render_preview, 0.1));
+
+                        add_font_to_ui(event.target.result.value.family);
+                    }
+                })();
 
                 for (let el of document.querySelectorAll(".input")) {
                     el.addEventListener("input", (e) => render_preview());
@@ -395,12 +480,13 @@
                             console.log("finished loading font, success?", status.success);
 
                             if (status.success) {
-                                // need to add to list of loaded fonts
-                                // also need to add to indexeddb or similar
+                                add_font_to_ui(status.font_family);
 
-                                let item = document.createElement("li");
-                                item.innerText = status.font_family ?? font.name;
-                                font_list_ul.appendChild(item);
+                                // Add to db
+                                let db = await fonts_db.get();
+                                db.transaction(["fonts"], "readwrite").objectStore("fonts").add({ "family": status.font_family, "data": e.target.result });
+
+                                setTimeout(render_preview, 0.1);
                             }
                         }
                         console.log("Loading font:", font);
@@ -411,6 +497,7 @@
                 render_preview();
             };
 
+            // --- Misc event handlers ---
             open_settings.addEventListener("click", () => {
                 menu.hidden = false;
             });
