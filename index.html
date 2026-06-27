@@ -96,6 +96,11 @@
                 /*border: 0;*/
             }
 
+            #status {
+                position: absolute;
+                right: 0.5cm;
+            }
+
             #menu {
                 z-index: 2;
                 position: fixed;
@@ -199,6 +204,7 @@
             <input type="number" class="input" value="7.0" id="px_per_pt" max="20" />
             <label for="px_per_pt">Pixels per point</label>
             <button id="open-settings-wide">More</button>
+            <span id="status" hidden></span>
         </div>
         <button class="wide-button if-narrow" id="open-settings">
             Settings
@@ -221,6 +227,11 @@
                 <p>
                     <input type="number" class="input" value="7.0" id="px_per_pt1" max="20" />
                     <label for="px_per_pt1">Pixels per point</label><br />
+                </p>
+
+                <p>
+                    <input type="checkbox" id="show-status">
+                    <label for="show-status">Show renderer status</label>
                 </p>
 
                 <div id="font-list">
@@ -289,6 +300,9 @@
             let font_picker = document.querySelector("#font-picker");
             let font_picker_add = document.querySelector("#font-picker-add");
 
+            let status = document.querySelector("#status");
+            let show_status = document.querySelector("#show-status");
+
             // --- WebWorker scheduling ---
             // queue_job will set the queued job parameters, and have it be processed as soon as possible.
             class JobScheduler {
@@ -312,6 +326,7 @@
                         this.pending_callbacks[id] = cb;
                         this.queued_count -= 1;
                         delete this.queued[key];
+                        status.innerText = params[0];
                         this.worker.postMessage([params, id]);
                     }
                 }
@@ -323,6 +338,7 @@
                     }
                     delete this.pending_callbacks[id];
                     this.working = false;
+                    status.innerText = "";
                     this.check_queue();
                 }
 
@@ -512,6 +528,10 @@
                     menu.hidden = true;
                 }
             });
+
+            show_status.addEventListener("input", () => {
+                status.hidden = !show_status.checked;
+            })
 
             function sync(name) {
                 let normal = document.getElementById(name);
