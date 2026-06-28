@@ -9,5 +9,6 @@ crate-type = ["cdylib"]
 [dependencies]
 typst = "0.15.0"
 typst-render = "0.15.0"
+typst-svg = "0.15.0"
 wasm-bindgen = "0.2.105"
 web-sys = { version = "0.3.82", features = ["console"] }

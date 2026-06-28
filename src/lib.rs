@@ -1,13 +1,11 @@
 use typst::{
-    Library, LibraryExt,
-    diag::{FileError, FileResult},
-    foundations::{Bytes, Datetime},
-    syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot},
-    text::{Font, FontBook},
-    utils::{LazyHash, Scalar},
+    Library, LibraryExt, diag::{FileError, FileResult}, foundations::{Bytes, Datetime}, syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot}, text::{Font, FontBook}, utils::{LazyHash, Scalar},
 };
 use typst_render::RenderOptions;
+use typst_svg::SvgOptions;
 use wasm_bindgen::prelude::*;
+
+use crate::iface::{Diagnostic, PngResult, SvgResult};
 
 mod iface;
 mod utils;
@@ -93,25 +91,22 @@ pub fn setup() -> Context {
 }
 
 #[wasm_bindgen]
-pub fn load_font(
-    context: &mut Context,
-    data: Vec<u8>,
-) -> Option<String> {
-    let Some(font) = Font::new(Bytes::new(data), 0 as u32) else { return None; };
+pub fn load_font(context: &mut Context, data: Vec<u8>) -> Option<String> {
+    let Some(font) = Font::new(Bytes::new(data), 0 as u32) else {
+        return None;
+    };
     let name = font.info().family.clone();
     context.basic_world.font_book.push(font.info().clone());
     context.basic_world.fonts.push(font);
     Some(name)
 }
 
-#[wasm_bindgen]
-pub fn compile(
+fn compile_common<T: typst::foundations::Output>(
     context: &Context,
     source: &str,
-    pixel_per_pt: f64,
     autosize: bool,
     transparent: bool,
-) -> iface::CompileResult {
+) -> (Option<T>, Vec<Diagnostic>) {
     let mut prefix = "".to_string();
     if transparent {
         prefix.push_str("#set page(fill: none)\n");
@@ -133,27 +128,43 @@ pub fn compile(
         .map(|diag| iface::Diagnostic::from_source_diagnostic(&world, prefix_len, diag))
         .collect();
 
-    let output = match result.output {
-        Ok(doc) => {
-            let opts = RenderOptions { pixel_per_pt: Scalar::from(pixel_per_pt), render_bleed: false };
-            let pm = typst_render::render_merged(&doc, &opts, typst::layout::Abs::zero(), None);
-
-            let png = pm.encode_png().expect("Encoding failed");
-
-            Some(png)
-        }
-        Err(err) => {
-            diagnostics.extend(
-                err.into_iter().map(|diag| {
+    let output =
+        match result.output {
+            Ok(doc) => Some(doc),
+            Err(err) => {
+                diagnostics.extend(err.into_iter().map(|diag| {
                     iface::Diagnostic::from_source_diagnostic(&world, prefix_len, diag)
-                }),
-            );
-            None
-        }
-    };
+                }));
+                None
+            }
+        };
 
-    iface::CompileResult {
-        output,
-        diagnostics,
-    }
+    (output, diagnostics)
+}
+
+#[wasm_bindgen]
+pub fn compile_png(context: &Context, source: &str, autosize: bool, transparent: bool, px_per_pt: f64) -> PngResult {
+    let (output, diagnostics) = compile_common(context, source, autosize, transparent);
+
+    let output = output.map(|doc| {
+        let opts = RenderOptions { pixel_per_pt: Scalar::new(px_per_pt), render_bleed: false };
+        let gap = typst::layout::Abs::cm(0.5);
+        let pm = typst_render::render_merged(&doc, &opts, gap, None);
+        pm.encode_png().unwrap()
+    });
+
+    PngResult { output, diagnostics }
+}
+
+#[wasm_bindgen]
+pub fn compile_svg(context: &Context, source: &str, autosize: bool, transparent: bool) -> SvgResult {
+    let (output, diagnostics) = compile_common(context, source, autosize, transparent);
+
+    let output = output.map(|doc| {
+        let opts = SvgOptions { render_bleed: false, pretty: false };
+        let gap = typst::layout::Abs::cm(0.5);
+        typst_svg::svg_merged(&doc, &opts, gap)
+    });
+
+    SvgResult { output, diagnostics }
 }

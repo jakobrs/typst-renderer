@@ -45,7 +45,13 @@ impl Diagnostic {
 }
 
 #[wasm_bindgen(getter_with_clone)]
-pub struct CompileResult {
+pub struct PngResult {
     pub output: Option<Vec<u8>>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct SvgResult {
+    pub output: Option<String>,
     pub diagnostics: Vec<Diagnostic>,
 }

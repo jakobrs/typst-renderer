@@ -2310,6 +2310,7 @@ version = "0.1.0"
 dependencies = [
  "typst",
  "typst-render",
+ "typst-svg",
  "wasm-bindgen",
  "web-sys",
 ]

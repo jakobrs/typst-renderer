@@ -53,8 +53,16 @@
             }
 
             #preview {
-                object-fit: scale-down;
                 min-height: 0;
+                position: relative;
+            }
+
+            #preview>img {
+                object-fit: scale-down;
+                width: calc(100% / 3);
+                height: 100%;
+                scale: 3;
+                transform-origin: left;
             }
 
             .wide-button {
@@ -194,7 +202,9 @@
 "
                 spellcheck="false"
             ></textarea>
-            <img id="preview" src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4="></img>
+            <div id="preview">
+                <img src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4="></img>
+            </div>
         </div>
         <div id="diagnostics">Diagnostics go here</div>
         <div id="wide-controls">
@@ -286,7 +296,7 @@
             // --- Elements ---
             let button = document.querySelector("#compile");
             let textarea = document.querySelector("#source");
-            let preview = document.querySelector("#preview");
+            let preview_img = document.querySelector("#preview>img");
             let diagnostics = document.querySelector("#diagnostics");
             let autosize = document.querySelector("#autosize");
             let transparent = document.querySelector("#transparent");
@@ -328,12 +338,14 @@
                         this.queued_count -= 1;
                         delete this.queued[key];
                         status.innerText = params[0];
+                        console.time(id);
                         this.worker.postMessage([params, id]);
                     }
                 }
 
                 handle_response(e) {
                     let id = e.data.job_id;
+                    console.timeEnd(id);
                     if (this.pending_callbacks[id] !== null) {
                         this.pending_callbacks[id](e.data);
                     }
@@ -432,17 +444,17 @@
                         diagnostics.style.display = "block";
                     } else {
                         diagnostics.style.display = "none";
-                        preview.src = output.url;
+                        preview_img.src = output.url;
                     }
                 }
 
                 let renderer = new JobScheduler(worker);
 
                 function render_preview() {
-                    let visible = window.getComputedStyle(preview, null).display != "none";
+                    let visible = window.getComputedStyle(preview_img, null).display != "none";
 
                     if (visible) {
-                        renderer.queue_job(["render", textarea.value, px_per_pt.value, autosize.checked, transparent.checked], oncompleted, "render");
+                        renderer.queue_job(["render_svg", textarea.value, autosize.checked, transparent.checked], oncompleted, "render");
                     }
                 }
 
@@ -473,7 +485,7 @@
                 }
 
                 function run() {
-                    renderer.queue_job(["render", textarea.value, px_per_pt.value, autosize.checked, transparent.checked], (output) => {
+                    renderer.queue_job(["render_png", textarea.value, autosize.checked, transparent.checked, px_per_pt.value], (output) => {
                         oncompleted(output);
                         window.location = output.url;
                     });
