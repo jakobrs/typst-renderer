@@ -108,6 +108,7 @@ fn compile_common<T: typst::foundations::Output>(
     transparent: bool,
 ) -> (Option<T>, Vec<Diagnostic>) {
     let mut prefix = "".to_string();
+    prefix.push_str("#set text(font: \"New Computer Modern\")\n");
     if transparent {
         prefix.push_str("#set page(fill: none)\n");
     }
